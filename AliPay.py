@@ -52,12 +52,29 @@ total_balance['week'] = total_balance['date'].dt.week
 total_balance['weekday'] = total_balance['date'].dt.weekday
 
 # 画出每日总购买与赎回量的时间序列图
-fig = plt.figure(figsize=(20, 6))
-plt.plot(total_balance['date'], total_balance['total_purchase_amt'], label='purchase')
-plt.plot(total_balance['date'], total_balance['total_redeem_amt'], label='redeem')
+# fig = plt.figure(figsize=(20, 6))
+# plt.plot(total_balance['date'], total_balance['total_purchase_amt'], label='purchase')
+# plt.plot(total_balance['date'], total_balance['total_redeem_amt'], label='redeem')
+#
+# plt.legend(loc='best')
+# plt.title("The lineplot of total amount of Purchase and Redeem from July.13 to Sep.14")
+# plt.xlabel("Time")
+# plt.ylabel("Amount")
+# plt.show()
 
-plt.legend(loc='best')
-plt.title("The lineplot of total amount of Purchase and Redeem from July.13 to Sep.14")
-plt.xlabel("Time")
-plt.ylabel("Amount")
+# 按翌日对数据聚合后取均值
+total_balance_1 = total_balance[total_balance['date'] >= datetime.datetime(2014, 4, 1)]
+week_sta = total_balance_1[['total_purchase_amt', 'total_redeem_amt', 'weekday']].groupby('weekday',
+                                                                                          as_index=False).mean()
+
+# 分析翌日的中位数特征
+plt.figure(figsize=(12, 5))
+ax = plt.subplot(1, 2, 1)
+plt.title('The barplot of average total purchase with each weekday')
+ax = sns.barplot(x="weekday", y="total_purchase_amt", data=week_sta, label='Purchase')
+ax.legend()
+ax = plt.subplot(1, 2, 2)
+plt.title('The barplot of average total redeem with each weekday')
+ax = sns.barplot(x="weekday", y="total_redeem_amt", data=week_sta, label='Redeem')
+ax.legend()
 plt.show()
