@@ -244,7 +244,7 @@ total_balance = encode_data(total_balance)
 feature = total_balance[[x for x in total_balance.columns if x not in date_indexs]]
 
 
-# 绘制箱型图
+# 绘制箱型图，箱型图对离异值不敏感
 def draw_boxplot(data: pd.DataFrame) -> None:
     f, axes = plt.subplots(7, 4, figsize=(18, 24))
     global date_indexs, labels
@@ -281,3 +281,204 @@ def draw_correlation_heatmap(data: pd.DataFrame, way: str = 'pearson') -> None:
 temp = np.abs(feature[[x for x in feature.columns
                        if x not in ['total_redeem_amt', 'date']]].corr('spearman')['total_purchase_amt'])
 feature_low_correlation = list(set(temp[temp < 0.1].index))
+
+
+# 提取距离特征
+def extract_distance_feature(data: pd.DataFrame) -> pd.DataFrame:
+    total_balance = data.copy()
+
+    # 距离放假还有多少天
+    total_balance['dis_to_nowork'] = 0
+    for index, row in total_balance.iterrows():
+        if row['is_work'] == 0:
+            step = 1
+            flag = 1
+            while flag:
+                if index - step >= 0 and total_balance.loc[index - step, 'is_work'] == 1:
+                    total_balance.loc[index - step, 'dis_to_nowork'] = step
+                    step += 1
+                else:
+                    flag = 0
+
+    total_balance['dis_from_nowork'] = 0
+    step = 0
+    for index, row in total_balance.iterrows():
+        step += 1
+        if row['is_work'] == 1:
+            total_balance.loc[index, 'dis_from_nowork'] = step
+        else:
+            step = 0
+
+    # 距离上班还有多少天
+    total_balance['dis_to_work'] = 0
+    for index, row in total_balance.iterrows():
+        if row['is_work'] == 1:
+            step = 1
+            flag = 1
+            while flag:
+                if index - step >= 0 and total_balance.loc[index - step, 'is_work'] == 0:
+                    total_balance.loc[index - step, 'dis_to_work'] = step
+                    step += 1
+                else:
+                    flag = 0
+
+    total_balance['dis_from_work'] = 0
+    step = 0
+    for index, row in total_balance.iterrows():
+        step += 1
+        if row['is_work'] == 0:
+            total_balance.loc[index, 'dis_from_work'] = step
+        else:
+            step = 0
+
+    # 距离节假日还有多少天
+    total_balance['dis_to_holiday'] = 0
+    for index, row in total_balance.iterrows():
+        if row['is_holiday'] == 1:
+            step = 1
+            flag = 1
+            while flag:
+                if index - step >= 0 and total_balance.loc[index - step, 'is_holiday'] == 0:
+                    total_balance.loc[index - step, 'dis_to_holiday'] = step
+                    step += 1
+                else:
+                    flag = 0
+
+    total_balance['dis_from_holiday'] = 0
+    step = 0
+    for index, row in total_balance.iterrows():
+        step += 1
+        if row['is_holiday'] == 0:
+            total_balance.loc[index, 'dis_from_holiday'] = step
+        else:
+            step = 0
+
+    # 距离节假日最后一天还有多少天
+    total_balance['dis_to_holiendday'] = 0
+    for index, row in total_balance.iterrows():
+        if row['is_lastday_of_holiday'] == 1:
+            step = 1
+            flag = 1
+            while flag:
+                if index - step >= 0 and total_balance.loc[index - step, 'is_lastday_of_holiday'] == 0:
+                    total_balance.loc[index - step, 'dis_to_holiendday'] = step
+                    step += 1
+                else:
+                    flag = 0
+
+    total_balance['dis_from_holiendday'] = 0
+    step = 0
+    for index, row in total_balance.iterrows():
+        step += 1
+        if row['is_lastday_of_holiday'] == 0:
+            total_balance.loc[index, 'dis_from_holiendday'] = step
+        else:
+            step = 0
+
+    # 距离月初第几天
+    total_balance['dis_from_startofmonth'] = np.abs(total_balance['day'])
+
+    # 距离月的中心点有几天
+    total_balance['dis_from_middleofmonth'] = np.abs(total_balance['day'] - 15)
+
+    # 距离星期的中心有几天
+    total_balance['dis_from_middleofweek'] = np.abs(total_balance['weekday'] - 3)
+
+    # 距离星期日有几天
+    total_balance['dis_from_endofweek'] = np.abs(total_balance['weekday'] - 6)
+
+    return total_balance
+
+
+# 拼接距离特征到原数据集
+total_balance = extract_distance_feature(total_balance)
+
+# 获取距离特征的列名
+feature = total_balance[[x for x in total_balance.columns if x not in date_indexs]]
+dis_feature_indexs = [x for x in feature.columns if (x not in date_indexs + labels + ['date']) & ('dis' in x)]
+
+
+# 画点线
+def draw_point_feature(data: pd.DataFrame) -> None:
+    feature = data.copy()
+    f, axes = plt.subplots(data.shape[1] // 3, 3, figsize=(30, data.shape[1] // 3 * 4))
+    count = 0
+    for i in [x for x in feature.columns if (x not in date_indexs + labels + ['date'])]:
+        sns.pointplot(x=i, y="total_purchase_amt",
+                      markers=["^", "o"], linestyles=["-", "--"],
+                      kind="point", data=feature, ax=axes[count // 3][count % 3] if data.shape[1] > 3 else axes[count])
+        count += 1
+    plt.show()
+
+
+# 处理距离过远的时间点
+def dis_change(x):
+    if x > 5:
+        x = 10
+    return x
+
+
+# 处理特殊距离
+dis_holiday_feature = [x for x in total_balance.columns if 'dis' in x and 'holi' in x]
+dis_month_feature = [x for x in total_balance.columns if 'dis' in x and 'month' in x]
+total_balance[dis_holiday_feature] = total_balance[dis_holiday_feature].applymap(dis_change)
+total_balance[dis_month_feature] = total_balance[dis_month_feature].applymap(dis_change)
+
+feature = total_balance[[x for x in total_balance.columns if x not in date_indexs]]
+
+# 画处理后的点线图
+# draw_point_feature(feature[['total_purchase_amt'] + dis_feature_indexs])
+
+# 剔除看起来用处不大的特征
+purchase_feature_seems_useless += [
+    # 即使做了处理，但方差太大，不可信，规律不明显
+    'dis_to_holiday',
+    # 方差太大，不可信
+    'dis_from_startofmonth',
+    # 方差太大，不可信
+    'dis_from_middleofmonth'
+]
+
+# 画出相关性图
+# draw_correlation_heatmap(feature[['total_purchase_amt'] + dis_feature_indexs])
+
+# 剔除相关性较差的特征
+temp = np.abs(feature[[x for x in feature.columns
+                       if ('dis' in x) | (x in ['total_purchase_amt'])]].corr()['total_purchase_amt'])
+feature_low_correlation += list(set(temp[temp < 0.1].index))
+
+
+# 观察波峰特点
+# fig = plt.figure(figsize=(15, 15))
+# for i in range(6, 9):
+#     plt.subplot(5, 1, i - 5)
+#     total_balance_2 = total_balance[
+#         (total_balance['date'] >= datetime.datetime(2014, i, 1)) & (
+#                 total_balance['date'] < datetime.datetime(2014, i + 1, 1))]
+#     sns.pointplot(x=total_balance_2['day'], y=total_balance_2['total_purchase_amt'])
+#     plt.legend().set_title('Month:' + str(i))
+# plt.show()
+
+
+# 设定波峰日期
+def extract_peak_feature(data: pd.DataFrame) -> pd.DataFrame:
+    total_balance = data.copy()
+    # 距离purchase波峰（即周二）有几天
+    total_balance['dis_from_purchase_peak'] = np.abs(total_balance['weekday'] - 1)
+
+    # 距离purchase波谷（即周日）有几天，与dis_from_endofweek相同
+    total_balance['dis_from_purchase_valley'] = np.abs(total_balance['weekday'] - 6)
+
+    return total_balance
+
+
+# 提取波峰特征
+total_balance = extract_peak_feature(total_balance)
+feature = total_balance[[x for x in total_balance.columns if x not in date_indexs]]
+
+# draw_point_feature(feature[['total_purchase_amt'] + ['dis_from_purchase_peak', 'dis_from_purchase_valley']])
+
+# 波峰特征相关性
+temp = np.abs(
+    feature[[x for x in feature.columns if ('peak' in x) or ('valley' in x) or (x in ['total_purchase_amt'])]].corr()[
+        'total_purchase_amt'])
